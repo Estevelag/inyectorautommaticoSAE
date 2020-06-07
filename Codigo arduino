@@ -1,0 +1,544 @@
+// include the library code:
+#include <Keypad.h>
+#include <LiquidCrystal.h>
+#include <Stepper.h>
+#define STEPS 10 //this define the angle of each step in the steps motors in particular for the syringe because it is
+// DC Motors
+int jermot = 44;// this defines the pins for the syringe left right motor
+int jermot1 = 45;// this defines the pin for direction of the previous motor
+
+int vacija= 41;// this defines the pins for the motor reservour platform for the syringe to fill
+int vacija1=40;// this defines the pin for direction of the previous motor
+
+//definition of ultrasonic sensor // es necesario tener la carpeta con el hex del sensor
+const int echoPin = 35; // Echo Pin of Ultrasonic Sensor
+const int trigPin = 39;
+long duration;
+int distanceCm;
+float liquid;
+
+//definition photoresistance
+const int pr = A2;
+int valpr;
+float lumin;
+
+// initialize the library by associating any needed LCD interface pin
+// with the arduino pin number it is connected to
+const int rs = 12, en = 11, d4 = 23, d5 = 22, d6 = 3, d7 = 24;// this defines the pins for the LCD
+LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
+
+//definition of stepper motors
+Stepper stepper(STEPS, 7, 6, 10, 9);// this is the stepper for theangle of the circle
+Stepper stepper1(STEPS, 8, 13, 5, 4);// this is the stepper for the syringe
+// constants an variables
+const int pot = A1;// this defines the pins potenciometer that measures the angle of the circle base
+int valAn;
+float voltaje; //this defines the percentage of the potenciometer that measures the angle of the circle base
+
+// definition of the keypad
+const byte ROWS = 4;
+const byte COLS = 3;
+char keys[ROWS][COLS] = {
+  {'1','2','3'},
+  {'4','5','6'},
+  {'7','8','9'},
+  {'*','0','#'}
+};
+byte rowPins[ROWS] = {50, 51, 52, 53};
+byte colPins[COLS]= {49, 48, 47};
+Keypad keypad = Keypad(makeKeymap(keys),rowPins,colPins,ROWS,COLS);
+
+
+void setup() {
+  // set up the LCD's number of columns and rows:
+  lcd.begin(16, 4);
+  // Print a message to the LCD.
+  pinMode(jermot, OUTPUT);
+  pinMode(jermot1, OUTPUT);
+  pinMode(vacija, OUTPUT);
+  pinMode(vacija1, OUTPUT);
+  pinMode(trigPin, OUTPUT); // initialising pin 3 as output
+  pinMode(echoPin, INPUT); // initialising pin 2 as input
+  stepper.setSpeed(20);// this is the speed in RPM of the stepper motors
+  stepper1.setSpeed(20);
+  Serial.begin(9600);
+}
+//global variables
+int jer=0;// a variable to save which syringe is used
+int i=0;
+int rot[] = {-1, -1};
+int cant[] = {-1, -1};
+int a=0;// logical value to see if the rot number has been put
+int b=0;// logical value to see if the quantity of mililiters has been introduced
+int rotulo=0;// this is the rotule number taht the perxson wants to fill
+int cantidad;//this is the quantity of liquid that is going to be dispensed
+int c=0;
+int speed_= 0;
+int d=0;
+int e=0;
+int Angulo=0;
+
+void loop() {
+  char key = keypad.getKey();
+  //////// THIS IS THE THIRD THING THAT THE SYSTEM DOES
+  if (a!=0 && b==0){// this introduces the liquid that the person wants to fill
+   cant[0] = liquid1(key,c);
+   cant[1] = liquid2(key,c);
+   cantidad= liquid3(key,c);
+   c=liquid4(key,c);
+   
+  }
+  //////// THIS IS THE SECOND THING THAT THE SYSTEM DOES
+    if ((a==0) && (jer != 0)){//this introduces the rotule number that the person wants to fill
+   rotulo = rotulos4(key,c);
+   rot[1] = rotulos3(key,c);
+   rot[0] = rotulos2(key,c);
+   c = rotulos1(key,c);
+  }
+  //////// THIS IS THE FIRST THING THAT THE SYSTEM DOES
+  if (jer==0){//this introduces the syringe that the person is going to use
+   jer= syrin(key);
+  }
+  //////// THIS IS THE FOURTH THING THAT THE SYSTEM DOES
+  if ((cantidad != 0) && (b==1)&& (d==0)){
+    lcd1();
+    distanceCm=distance(trigPin, echoPin);
+    if (distanceCm > 10){// this is done when the syringe isnt right above the reservouir
+      reservleft();
+    }//the next line is for the lifting of the reservouir, the loading of the syringe and the lowering of the rervoir
+    Serial.print(" subiendo reservorio ");
+    resermove(0);
+    Serial.print(" extrayendo liquido ");
+    syringeload(cantidad);
+    Serial.print(" bajando reservorio ");
+    resermove(1);
+    d=1;
+  }
+   //////// THIS IS THE FIFTH THING THAT THE SYSTEM DOES
+    if(d!=0){
+       distanceCm = distance(trigPin,echoPin);
+       jerot();
+      //now we have to move the syringe to the right depending of the radii in which the rotule is on
+      if (int(rotulo) <13){// this is the first case
+      if(distanceCm > 20 && distanceCm < 30){
+       apague();
+      }
+      }
+      if (int(rotulo)>12 && int(rotulo)< 25){// this is the second case
+      if(distanceCm > 30 && distanceCm < 40){
+        apague();
+      }
+      }
+        if (int(rotulo)>24 && int(rotulo) < 37){// this is the second case
+      if (distanceCm > 40 && distanceCm < 50){
+        apague();
+      }
+      }
+    }
+      // now its time to move the angle
+       //////// THIS IS THE SIXTH AND LAST THING THAT THE SYSTEM DOES
+      if(e!=0){
+        Angulo= readAngle();
+        rotulo = standrot(rotulo);// this is to standadize the direction in which it has to move
+        Serial.print(rotulo);
+        Serial.print(" dispensando liquido ");
+        lcd.setCursor(0, 3);
+        lcd.print(rotulo*8.3+50);
+        while(Angulo < 8.3 * rotulo  + 50){// 50% OF THE POT IS THE 0 ANGLE IN WHICH IT WILL ALWAYS START
+          stepper1.step(1); //this indicartes the quantity of degrees that it has to move it should be equal to rotulo*3
+          delay(50);
+          Angulo= readAngle();
+          lcd.setCursor(4, 3);
+          lcd.print(Angulo);
+        } 
+        stepper.step(-cantidad);
+        Serial.print(" retrayendo embolo ");
+        delay(1000);
+        Serial.print(" volviendo angulo ");
+        stepper1.step(-rotulo*3);//This makes the circle go back to its original place
+        // now its time to reinitialize variables
+        reinit();
+        Serial.print("acabo el proceso ");
+        delay(500);
+        }
+}
+int syrin(char key){// function to make an input of the syringe that the person is going to use
+    lcd.setCursor(0, 1);
+    lcd.print("Introduzca la ");
+    lcd.setCursor(0, 2);
+    lcd.print("jeringa, 1 o 2"); 
+    Serial.print(key);
+    if ((key - '0') < 3 && isDigit(key)){
+      jer=(key - '0');
+      lcd.clear();
+      return jer;
+    } 
+}
+int rotulos1(char key, int c){// function to make an input of the rotule number that the person is going to fill
+   lcd.setCursor(0, 0);
+    lcd.print("Introduzca el ");
+    lcd.setCursor(0, 1);
+    lcd.print("rotulo, entre 0-");
+    lcd.setCursor(0, 2);
+    lcd.print("36, ");
+    lcd.print("ha undido: ");
+    if (rot[0]!= -1){
+      lcd.print(rot[0]);
+      if (rot[1]!= -1){
+        lcd.print(rot[1]);
+      }
+    }
+    if(c<2 && isDigit(key)){
+    i=(key - '0');
+    rot[c]=i;
+    c=c+1;
+    }
+    if (c==2 || key=='*'){
+      a=1;
+      c=0;
+      lcd.clear();
+      if (rot[1]==-1){
+        rotulo=rot[0];
+      }
+      else{
+        rotulo=rot[0]*10+rot[1];
+      } 
+    }
+    return c;
+}
+
+int rotulos2(char key, int c){// function to make an input of the rotule number that the person is going to fill 2
+   lcd.setCursor(0, 0);
+    lcd.print("Introduzca el ");
+    lcd.setCursor(0, 1);
+    lcd.print("rotulo, entre 0-");
+    lcd.setCursor(0, 2);
+    lcd.print("36, ");
+    lcd.print("ha undido: ");
+    if (rot[0]!= -1){
+      lcd.print(rot[0]);
+      if (rot[1]!= -1){
+        lcd.print(rot[1]);
+      }
+    }
+    if(c<2 && isDigit(key)){
+    i=(key - '0');
+    rot[c]=i;
+    c=c+1;
+    }
+    if (c==2 || key=='*'){
+      a=1;
+      c=0;
+      lcd.clear();
+      if (rot[1]==-1){
+        rotulo=rot[0];
+      }
+      else{
+        rotulo=rot[0]*10+rot[1];
+      } 
+    }
+    return rot[0];
+}
+int rotulos3(char key, int c){// function to make an input of the rotule number that the person is going to fill 3
+   lcd.setCursor(0, 0);
+    lcd.print("Introduzca el ");
+    lcd.setCursor(0, 1);
+    lcd.print("rotulo, entre 0-");
+    lcd.setCursor(0, 2);
+    lcd.print("36, ");
+    lcd.print("ha undido: ");
+    if (rot[0]!= -1){
+      lcd.print(rot[0]);
+      if (rot[1]!= -1){
+        lcd.print(rot[1]);
+      }
+    }
+    if(c<2 && isDigit(key)){
+    i=(key - '0');
+    rot[c]=i;
+    c=c+1;
+    }
+    if (c==2 || key=='*'){
+      a=1;
+      c=0;
+      lcd.clear();
+      if (rot[1]==-1){
+        rotulo=rot[0];
+      }
+      else{
+        rotulo=rot[0]*10+rot[1];
+      } 
+    }
+    return rot[1];
+}
+int rotulos4(char key, int c){ // function to make an input of the rotule number that the person is going to fill 4
+   lcd.setCursor(0, 0);
+    lcd.print("Introduzca el ");
+    lcd.setCursor(0, 1);
+    lcd.print("rotulo, entre 0-");
+    lcd.setCursor(0, 2);
+    lcd.print("36, ");
+    lcd.print("ha undido: ");
+    if (rot[0]!= -1){
+      lcd.print(rot[0]);
+      if (rot[1]!= -1){
+        lcd.print(rot[1]);
+      }
+    }
+    if(c<2 && isDigit(key)){
+    i=(key - '0');
+    rot[c]=i;
+    c=c+1;
+    }
+    if (c==2 || key=='*'){
+      a=1;
+      c=0;
+      lcd.clear();
+      if (rot[1]==-1){
+        rotulo=rot[0];
+      }
+      else{
+        rotulo=rot[0]*10+rot[1];
+      } 
+    }
+    return rotulo;
+}
+   
+int liquid1(char key, int c){// function to make an input of the quantity of liquid which the person is going to dispense
+    lcd.setCursor(0, 0);
+    lcd.print("Introduzca la ");
+    lcd.setCursor(0, 1);
+    lcd.print("cantidad a echar");
+    lcd.setCursor(0, 2);
+    lcd.print("entre 0.0 y 3.5mL");
+    lcd.setCursor(0, 3);
+    if (cant[0]!=-1){
+      lcd.print(cant[0]);
+      if(cant[1]!=-1){
+        lcd.print(".");
+        lcd.print(cant[1]);
+      }
+    }
+    if(c<2 && isDigit(key)){
+    i=(key - '0');
+    cant[c]=i;
+    c=c+1;
+    }
+    if (c==2 || key=='*'){
+      b=1;
+      c=0;
+      lcd.clear();
+      if (cant[1]==-1){
+        cantidad=cant[0];
+      }
+      else{
+        cantidad=cant[0]*10+cant[1];
+      } 
+    } 
+    return cant[0];
+}   
+int liquid2(char key, int c){// function to make an input of the quantity of liquid which the person is going to dispense 2
+    lcd.setCursor(0, 0);
+    lcd.print("Introduzca la ");
+    lcd.setCursor(0, 1);
+    lcd.print("cantidad a echar");
+    lcd.setCursor(0, 2);
+    lcd.print("entre 0.0 y 3.5mL");
+    lcd.setCursor(0, 3);
+    if (cant[0]!=-1){
+      lcd.print(cant[0]);
+      if(cant[1]!=-1){
+        lcd.print(".");
+        lcd.print(cant[1]);
+      }
+    }
+    if(c<2 && isDigit(key)){
+    i=(key - '0');
+    cant[c]=i;
+    c=c+1;
+    }
+    if (c==2 || key=='*'){
+      b=1;
+      c=0;
+      lcd.clear();
+      if (cant[1]==-1){
+        cantidad=cant[0];
+      }
+      else{
+        cantidad=cant[0]*10+cant[1];
+      } 
+    } 
+    return cant[1];
+}   
+int liquid3(char key, int c){// function to make an input of the quantity of liquid which the person is going to dispense 3
+    lcd.setCursor(0, 0);
+    lcd.print("Introduzca la ");
+    lcd.setCursor(0, 1);
+    lcd.print("cantidad a echar");
+    lcd.setCursor(0, 2);
+    lcd.print("entre 0.0 y 3.5mL");
+    lcd.setCursor(0, 3);
+    if (cant[0]!=-1){
+      lcd.print(cant[0]);
+      if(cant[1]!=-1){
+        lcd.print(".");
+        lcd.print(cant[1]);
+      }
+    }
+    if(c<2 && isDigit(key)){
+    i=(key - '0');
+    cant[c]=i;
+    c=c+1;
+    }
+    if (c==2 || key=='*'){
+      b=1;
+      c=0;
+      lcd.clear();
+      if (cant[1]==-1){
+        cantidad=cant[0];
+      }
+      else{
+        cantidad=cant[0]*10+cant[1];
+      } 
+    } 
+    return cantidad;
+} 
+int liquid4(char key, int c){// function to make an input of the quantity of liquid which the person is going to dispense 4
+    lcd.setCursor(0, 0);
+    lcd.print("Introduzca la ");
+    lcd.setCursor(0, 1);
+    lcd.print("cantidad a echar");
+    lcd.setCursor(0, 2);
+    lcd.print("entre 0.0 y 3.5mL");
+    lcd.setCursor(0, 3);
+    if (cant[0]!=-1){
+      lcd.print(cant[0]);
+      if(cant[1]!=-1){
+        lcd.print(".");
+        lcd.print(cant[1]);
+      }
+    }
+    if(c<2 && isDigit(key)){
+    i=(key - '0');
+    cant[c]=i;
+    c=c+1;
+    }
+    if (c==2 || key=='*'){
+      b=1;
+      c=0;
+      
+      lcd.clear();
+      if (cant[1]==-1){
+        cantidad=cant[0];
+      }
+      else{
+        cantidad=cant[0]*10+cant[1];
+      }
+    Serial.print("El rotulo es: ");
+    Serial.print(rotulo);
+    Serial.print(" y la cant es :");
+    Serial.print(cantidad); 
+    } 
+    return c;
+}    
+int distance(int trigPin,int echoPin){// function to get the distance of the sringe from the axis that is next to the rotule 1
+    digitalWrite(trigPin, LOW);// this measures the distance which the syringe is to the right of the reservouir
+    delayMicroseconds(2);
+    digitalWrite(trigPin, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(trigPin, LOW);
+    duration = pulseIn(echoPin, HIGH);
+    distanceCm= duration*0.034/2;   
+    return distanceCm;
+}
+void lcd1(){//function to make people stand by
+    lcd.setCursor(0, 1);
+    lcd.print("Procesando");
+    lcd.setCursor(0, 2);
+    lcd.print("Espere por favor");
+}
+void reservleft(){// function to get the syringe above the reservouir
+     digitalWrite(jermot, HIGH);
+     digitalWrite(jermot1, LOW);
+     while( distanceCm > 10){// this is done to move the syringe right above the reservoir
+        distanceCm=distance(trigPin,echoPin);
+          if (distanceCm <= 11){
+            
+          }
+         }
+      digitalWrite(jermot, LOW);
+      digitalWrite(jermot1, LOW);
+}
+void resermove(int n){// this function makes the reservoir go up
+  // this takes the reservouir up for the syringe to take the liquid
+   if (n==0){
+    digitalWrite(vacija1, LOW);
+    digitalWrite(vacija, HIGH);
+   }
+   if (n==1){
+    digitalWrite(vacija1, HIGH);
+    digitalWrite(vacija, LOW);
+   }
+   delay(1000);// this is the time that the dc motor takes to elevate the reservouir
+   Serial.print("apagandose");
+   digitalWrite(vacija, LOW);
+   digitalWrite(vacija1,LOW);
+}
+void syringeload(int cantidad){// function to load the syringe
+      while(lumin < cantidad*2.8){// the 2.8 is like to escalate the measure from 0 to 98 almost as the pot
+        valpr = analogRead(pr);
+        lumin = 100 - (100.0*(valpr*(5.0/1023.0))/5.0);
+        stepper.step(1);//
+        if (lumin>=cantidad*2.8){
+          
+        }
+      }
+      //maybe stepper.step(cantidad) works best without the sensor;//
+}     
+void reinit(){
+    jer=0;// a variable to save which syringe is used
+    i=0;
+    rot[0] = -1;
+    rot[1] = -1;
+    cant[0] = -1;
+    cant[1] = -1;
+    a=0;// logical value to see if the rot number has been put
+    b=0;// logical value to see if the quantity of mililiters has been introduced
+    cantidad;//this is the quantity of liquid that is going to be dispensed
+    c=0;
+    speed_= 0;
+    d=0;
+    e=0;
+    Angulo=0;
+    lcd.clear(); 
+}
+void apague(){//fucntion to turn down the radial dc motor
+    digitalWrite(jermot, LOW);
+    digitalWrite(jermot1,LOW);
+    e=1;
+}
+void jerot(){//function set the syringe in the right radii
+   lcd.setCursor(0, 3);
+   lcd.print(distanceCm);
+   digitalWrite(jermot, LOW);
+   digitalWrite(jermot1, HIGH);
+}
+int standrot(int rotulo){
+  if(rotulo>24){//this is done to standardize the angles for each loop
+          rotulo=rotulo-24;
+  }
+  if(rotulo<24 && rotulo>12){
+    rotulo=rotulo-12;
+  }
+  if (rotulo<7){//this is to emphasize that the position it starts is in the rotule number 0
+    rotulo=rotulo-1;
+  }
+  if (rotulo>6){
+    rotulo=rotulo -13;//this is to stanrdize the movement from the first one which is where it will always start
+  }
+  return rotulo;
+}
+int readAngle(){
+  valAn=analogRead(pot);
+  Angulo= 100 - int(100.0*(valAn*(5.0/1023.0))/5.0);
+}
